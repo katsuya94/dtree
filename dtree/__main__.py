@@ -63,30 +63,51 @@ with open(args.trainfile, 'rb') as trainfile:
 	titles = next(reader)
 	training = tuple(tuple(encode(coln, data) for coln, data in enumerate(row)) for row in reader)
 
-print titles
-
 # Learn tree
 
 import math
 
+def e(probability):
+	if probability == 0.0:
+		return -0.0
+	else:
+		return -probability * math.log(probability, 2)
+
+def divide(numerator, denominator):
+	try:
+		return numerator / denominator
+	except ZeroDivisionError:
+		return 0
+
 class Split(object):
+	def __init__(self):
+		self.cached_total_entropy = None
+
 	def entropy(self, example_idxs):
-		split_counts = [[0 for _ in range(len(uniques[-1]))] for _ in range(self.branch())]
+		split_counts = [[0 for _ in range(len(uniques[classification_coln]))] for _ in range(self.branch())]
 
 		for example_idx in example_idxs:
 			example = training[example_idx]
-			classifications = range(len(uniques[-1])) if example[-1] is None else [example[-1]]
+			classifications = range(len(uniques[classification_coln])) if example[classification_coln] is None else [example[classification_coln]]
 			for idx in self.split(example):
 				for classification in classifications:
 					split_counts[idx][classification] += 1
 
 		split_totals = [float(sum(counts)) for counts in split_counts]
 
-		split_probabilities = [[count / split_total for count in counts] for counts, split_total in zip(split_counts, split_totals)]
+		total = sum(split_totals)
 
-		split_entropies = [-sum(probability * math.log(probability, 2) for probability in probabilities) for probabilities in split_probabilities]
+		split_proportions = [divide(split_total, total) for split_total in split_totals]
 
-		return sum(split_entropies)
+		split_probabilities = [[divide(count, split_total) for count in counts] for counts, split_total in zip(split_counts, split_totals)]
+
+		split_entropies = [sum(e(probability) for probability in probabilities) for probabilities in split_probabilities]
+
+		weighted_entropies = [split_proportion * split_entropy for split_proportion, split_entropy in zip(split_proportions, split_entropies)]
+
+		self.cached_total_entropy = sum(weighted_entropies)
+
+		return self.cached_total_entropy
 
 	def split_examples(self, example_idxs):
 		split_idxs = [[] for _ in range(self.branch())]
@@ -105,6 +126,7 @@ class Split(object):
 
 class NominalSplit(Split):
 	def __init__(self, coln):
+		super(NominalSplit, self).__init__()
 		self.coln = coln
 
 	def branch(self):
@@ -118,10 +140,37 @@ class NominalSplit(Split):
 
 
 class NumericSplit(Split):
-	pass
+	def __init__(self, coln, w):
+		super(NumericSplit, self).__init__()
+		self.coln = coln
+		self.w = w
 
-def best(example_idxs, restricted_colns):
-	splits = [NominalSplit(coln) for coln, datatype in enumerate(meta) if datatype == 'nominal' and coln not in restricted_colns]
+	def branch(self):
+		return 2
+
+	def split(self, example):
+		if example[self.coln] is None:
+			return [0, 1]
+		if example[self.coln] < self.w:
+			return [0]
+		else:
+			return [1]
+
+MAXIMUM_NUMERIC_DEPTH = 4
+
+def good_numeric_splits(example_idxs, coln):
+	values = [training[example_idx][coln] for example_idx in example_idxs if training[example_idx][coln] is not None]
+	if len(values) > 0:
+		mean = sum(values) / len(values)
+		return [NumericSplit(coln, mean)]
+	else:
+		return []
+
+def best(example_idxs, restrictions):
+	nominal_splits = [NominalSplit(coln) for coln, datatype in enumerate(meta) if datatype == 'nominal' and not restrictions[coln]]
+	numeric_splits = [split for coln, datatype in enumerate(meta) for split in good_numeric_splits(example_idxs, coln) if datatype == 'numeric' and restrictions[coln] <= MAXIMUM_NUMERIC_DEPTH]
+
+	splits = nominal_splits + numeric_splits
 
 	best_split = None
 	best_entropy = float('inf')
@@ -137,7 +186,7 @@ def best(example_idxs, restricted_colns):
 def homogeneous(example_idxs):
 	first_encountered = None
 	for example_idx in example_idxs:
-		classification = training[example_idx][-1]
+		classification = training[example_idx][classification_coln]
 		if first_encountered is None:
 			first_encountered = classification
 		elif classification is not None and classification != first_encountered:
@@ -145,9 +194,9 @@ def homogeneous(example_idxs):
 	return first_encountered
 
 def majority(example_idxs):
-	counts = [0 for _ in range(len(uniques[-1]))]
+	counts = [0 for _ in range(len(uniques[classification_coln]))]
 	for example_idx in example_idxs:
-		classification = training[example_idx][-1]
+		classification = training[example_idx][classification_coln]
 		if classification is not None:
 			counts[classification] += 1
 
@@ -162,16 +211,21 @@ def majority(example_idxs):
 	return max_classification
 
 class Node(object):
-	def __init__(self, example_idxs, restricted_colns):
+	def __init__(self, example_idxs, restrictions):
+		self.num = len(example_idxs)
 		self.homogeneous = homogeneous(example_idxs)
 		if self.homogeneous is None:
-			self.split = best(example_idxs, restricted_colns)
+			self.split = best(example_idxs, restrictions)
 			if self.split is None:
 				self.homogeneous = majority(example_idxs)
+				self.children = []
 			else:
+				new_restrictions = list(restrictions)
 				if type(self.split) == NominalSplit:
-					restricted_colns = restricted_colns + [self.split.coln]
-				self.children = [Node(example_idxs_subset, restricted_colns) for example_idxs_subset in self.split.split_examples(example_idxs)]
+					new_restrictions[self.split.coln] = True
+				if type(self.split) == NumericSplit:
+					new_restrictions[self.split.coln] += 1
+				self.children = [Node(example_idxs_subset, new_restrictions) for example_idxs_subset in self.split.split_examples(example_idxs)]
 
 	def classify(self, example):
 		if self.homogeneous is not None:
@@ -179,4 +233,20 @@ class Node(object):
 		else:
 			return self.children[self.split.split(example)].classify(example)
 
-tree = Node(range(len(training)), [classification_coln])
+restrictions = [False if datatype == 'nominal' else 0 for datatype in meta]
+restrictions[classification_coln] = True
+
+tree = Node(range(len(training)), restrictions)
+
+def traverse(node, level):
+	if node.homogeneous is not None:
+		print '  ' * level + '%s: %s (%s)' % (titles[classification_coln], decodes[classification_coln][node.homogeneous], node.num,)
+	else:
+		if type(node.split) == NominalSplit:
+			print '  ' * level + '%s (%s)' % (titles[node.split.coln], node.num,)
+		if type(node.split) == NumericSplit:
+			print '  ' * level + '%s < %s (%s)' % (titles[node.split.coln], node.split.w, node.num,)
+		for child in node.children:
+			traverse(child, level + 1)
+
+traverse(tree, 0)
