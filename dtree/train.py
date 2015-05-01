@@ -12,19 +12,23 @@ def train(training, meta, n_uniques, classification_coln):
 	n_examples = training.shape[0]
 	n_classifications = n_uniques[classification_coln]
 
-	even_distribution = np.full(n_classifications, 1.0 / float(n_classifications), dtype=np.float64)
+	values = training[:, classification_coln]
+	counts = np.bincount(values[~np.isnan(values)].astype(np.int32))
+	popular_distribution = counts / np.float64(np.sum(counts))
+
 	homogeneous_distributions = tuple(np.zeros(n_classifications, dtype=np.float64) for _ in range(n_classifications))
 	for classification, homogeneous_distribution in enumerate(homogeneous_distributions):
 		homogeneous_distribution[classification] = 1.0
 
 	def classification_distribution(classification):
 		if classification is None:
-			return even_distribution
+			return popular_distribution
 		else:
 			return homogeneous_distributions[classification]
 
 	class Split(object):
-		def __init__(self):
+		def __init__(self, coln):
+			self.coln = coln
 			self.cached_entropy = None
 
 		def entropy(self, examples, nonzero):
@@ -76,10 +80,6 @@ def train(training, meta, n_uniques, classification_coln):
 			raise NotImplementedError()
 
 	class NominalSplit(Split):
-		def __init__(self, coln):
-			super(NominalSplit, self).__init__()
-			self.coln = coln
-
 		def branch(self):
 			return n_uniques[self.coln]
 
@@ -94,8 +94,7 @@ def train(training, meta, n_uniques, classification_coln):
 
 	class NumericSplit(Split):
 		def __init__(self, coln, w):
-			super(NumericSplit, self).__init__()
-			self.coln = coln
+			super(NumericSplit, self).__init__(coln)
 			self.w = w
 
 		def branch(self):
@@ -165,7 +164,7 @@ def train(training, meta, n_uniques, classification_coln):
 			else:
 				homogeneous_classification = homogeneous(nonzero)
 				if homogeneous_classification is not None:
-					self.distribution = classification_distribution(homogeneous_classification)
+					self.distribution = homogeneous_distributions[homogeneous_classification]
 				else:
 					self.distribution = weighted_distribution(nonzero)
 					self.split = best(examples, nonzero, restrictions)
