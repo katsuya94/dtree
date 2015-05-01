@@ -13,8 +13,8 @@ def train(training, meta, n_uniques, classification_coln):
 	n_classifications = n_uniques[classification_coln]
 
 	values = training[:, classification_coln]
-	counts = np.bincount(values[~np.isnan(values)].astype(np.int32))
-	popular_distribution = counts / np.float64(np.sum(counts))
+	counts = np.bincount(values[~np.isnan(values)].astype(np.int32), minlength=n_classifications)
+	popular_distribution = counts.astype(np.float64) / np.float64(np.sum(counts))
 
 	homogeneous_distributions = tuple(np.zeros(n_classifications, dtype=np.float64) for _ in range(n_classifications))
 	for classification, homogeneous_distribution in enumerate(homogeneous_distributions):

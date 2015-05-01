@@ -4,7 +4,7 @@ By Adrien Katsuya Tateno
 ```
 usage: dtree [-h] [--validate validatefile] [--learning validatefile]
              [--test testfile outputfile] [--prune prunefile]
-             [--percent trainingpercent] [--dnf]
+             [--percent trainingpercent] [--dnf] [--tree] [--profile]
              trainfile metafile
 
 A decision tree utility.
@@ -25,6 +25,8 @@ optional arguments:
   --percent trainingpercent
                         percentage of data to train on (random sample)
   --dnf                 print disjunctiive normal form
+  --tree                print tree
+  --profile             run cProfile when training
 ```
 
 ## Installation

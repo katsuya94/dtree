@@ -206,7 +206,7 @@ if args.learning is not None:
 		for _ in range(NUM_SAMPLES):
 			tree = train_subset((args.percent / 100.0) * (float(percent) / 100.0))
 			validity += validate(args.learning, tree) / float(NUM_SAMPLES)
-			points.append((percent, validity,))
+		points.append((percent, validity,))
 	for point in points:
 		print point
 
