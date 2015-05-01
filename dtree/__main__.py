@@ -23,6 +23,7 @@ parser.add_argument('--test', nargs=2, metavar=('testfile', 'outputfile'), help=
 parser.add_argument('--prune', metavar='prunefile', help='prune to improve performance on held out data')
 parser.add_argument('--percent', metavar='trainingpercent', type=float, default=100.0, help='percentage of data to train on (random sample)')
 parser.add_argument('--dnf', action='store_true', help='print disjunctiive normal form')
+parser.add_argument('--tree', action='store_true', help='print tree')
 parser.add_argument('--profile', action='store_true', help='run cProfile when training')
 
 args = parser.parse_args()
@@ -136,14 +137,66 @@ def train_subset(percent):
 		print "Done. (%.2fs)" % (time.time() - start)
 	return tree
 
+if args.validate is not None or args.dnf or args.tree or args.test is not None:
+	print
+	shared_tree = train_subset(args.percent / 100.0)
+
 if args.validate is not None:
 	print "\n[ --validate ]"
 
-	tree = train_subset(args.percent / 100.0)
-
 	print "Validating..."
-	validity = validate(args.validate, tree)
+	validity = validate(args.validate, shared_tree)
 	print "Validation: %.2f%%" % (100.0 * validity)
+
+if args.dnf:
+	print "\n[ --dnf ]"
+
+	classification_predicate_lists = [[] for _ in range(n_uniques[classification_coln])]
+
+	def traverse(node, predicates):
+		if node.children is None:
+			classification_predicate_lists[np.argmax(node.distribution)].append(predicates)
+		else:
+			for split_idx, child in enumerate(node.children):
+				traverse(child, predicates + [node.split.predicate(split_idx, decode, titles)])
+
+	traverse(shared_tree, [])
+
+	for classification, predicate_lists in enumerate(classification_predicate_lists):
+		print "\nIF %s THEN %s = %s" % (" OR ".join("(" + " AND ".join(predicate for predicate in predicate_list) + ")" for predicate_list in predicate_lists), titles[classification_coln], decode(classification_coln, classification))
+
+if args.tree:
+	print "\n[ --tree ]"
+
+	def traverse(node, depth):
+		if node.children is None:
+			classification = np.argmax(node.distribution)
+			print '  ' * depth + '%s = %s' % (titles[classification_coln], decode(classification_coln, classification),)
+		else:
+			for split_idx, child in enumerate(node.children):
+				print '  ' * depth + '%s (%d)' % (node.split.predicate(split_idx, decode, titles), child.num,)
+				traverse(child, depth + 1)
+
+	traverse(shared_tree, 0)
+
+if args.test is not None:
+	print "\n[ --test ]"
+
+	print "Testing..."
+
+	with open(args.test[0], 'rb') as testfile:
+		reader = csv.reader(testfile, dialect='dtree')
+		with open(args.test[1], 'wb') as outputfile:
+			writer = csv.writer(outputfile, dialect='dtree')
+			writer.writerow(next(reader))
+			for row in reader:
+				example = np.fromiter((encode(coln, data) for coln, data in enumerate(row)), dtype=np.float64)
+				classification = np.argmax(shared_tree.classify(example))
+				classified = list(row)
+				classified[classification_coln] = decode(classification_coln, classification)
+				writer.writerow(classified)
+
+	print "Done."
 
 if args.learning is not None:
 	print "\n[ --learning ]"
@@ -156,46 +209,6 @@ if args.learning is not None:
 			points.append((percent, validity,))
 	for point in points:
 		print point
-
-if args.dnf:
-	print "\n[ --dnf ]"
-
-	tree = train_subset(args.percent / 100.0)
-
-	classification_predicate_lists = [[] for _ in range(n_uniques[classification_coln])]
-
-	def traverse(node, predicates):
-		if node.children is None:
-			classification_predicate_lists[np.argmax(node.distribution)].append(predicates)
-		else:
-			for split_idx, child in enumerate(node.children):
-				traverse(child, predicates + [node.split.predicate(split_idx, decode, titles)])
-
-	traverse(tree, [])
-
-	for classification, predicate_lists in enumerate(classification_predicate_lists):
-		print "\nIF %s THEN %s = %s" % (" OR ".join("(" + " AND ".join(predicate for predicate in predicate_list) + ")" for predicate_list in predicate_lists), titles[classification_coln], decode(classification_coln, classification))
-
-if args.test is not None:
-	print "\n[ --test ]"
-
-	tree = train_subset(args.percent / 100.0)
-
-	print "Testing..."
-
-	with open(args.test[0], 'rb') as testfile:
-		reader = csv.reader(testfile, dialect='dtree')
-		with open(args.test[1], 'wb') as outputfile:
-			writer = csv.writer(outputfile, dialect='dtree')
-			writer.writerow(next(reader))
-			for row in reader:
-				example = np.fromiter((encode(coln, data) for coln, data in enumerate(row)), dtype=np.float64)
-				classification = np.argmax(tree.classify(example))
-				classified = list(row)
-				classified[classification_coln] = decode(classification_coln, classification)
-				writer.writerow(classified)
-
-	print "Done."
 
 if args.profile:
 	profiler.print_stats(sort='tottime')

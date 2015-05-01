@@ -144,6 +144,7 @@ def train(training, meta, n_uniques, classification_coln):
 	def weighted_distribution(nonzero):
 		counts = np.zeros(n_classifications, dtype=np.float64)
 		for example_idx in nonzero:
+			classification = training[example_idx, classification_coln]
 			if not np.isnan(classification):
 				counts += homogeneous_distributions[int(classification)]
 		return counts / np.sum(counts)
