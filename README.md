@@ -29,7 +29,6 @@ optional arguments:
 
 ## Installation
 
-### Prerequisites
 * Python 2.7.8 (2.7.x should work)
   * https://www.python.org/download/releases/2.7.8/
 * NumPy 1.9.2

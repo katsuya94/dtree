@@ -12,13 +12,16 @@ def train(training, meta, n_uniques, classification_coln):
 	n_examples = training.shape[0]
 	n_classifications = n_uniques[classification_coln]
 
+	even_distribution = np.full(n_classifications, 1.0 / float(n_classifications), dtype=np.float64)
+	homogeneous_distributions = tuple(np.zeros(n_classifications, dtype=np.float64) for _ in range(n_classifications))
+	for classification, homogeneous_distribution in enumerate(homogeneous_distributions):
+		homogeneous_distribution[classification] = 1.0
+
 	def classification_distribution(classification):
 		if classification is None:
-			distribution = np.full(n_classifications, 1.0 / float(n_classifications), dtype=np.float64)
+			return even_distribution
 		else:
-			distribution = np.zeros(n_classifications, dtype=np.float64)
-			distribution[classification] = 1.0
-		return distribution
+			return homogeneous_distributions[classification]
 
 	class Split(object):
 		def __init__(self):
@@ -101,10 +104,8 @@ def train(training, meta, n_uniques, classification_coln):
 		def split(self, example):
 			if np.isnan(example[self.coln]):
 				return None
-			elif example[self.coln] < self.w:
-				return 0
 			else:
-				return 1
+				return int(example[self.coln] < self.w)
 
 		def predicate(self, split_idx, decode, titles):
 			return "%s %s %s" % (titles[self.coln], '<' if split_idx == 0 else '>=', decode(self.coln, self.w),)

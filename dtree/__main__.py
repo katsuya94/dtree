@@ -6,6 +6,7 @@ import time
 
 import train
 import prune
+import cProfile
 
 NUM_SAMPLES = 3
 
@@ -22,8 +23,12 @@ parser.add_argument('--test', nargs=2, metavar=('testfile', 'outputfile'), help=
 parser.add_argument('--prune', metavar='prunefile', help='prune to improve performance on held out data')
 parser.add_argument('--percent', metavar='trainingpercent', type=float, default=100.0, help='percentage of data to train on (random sample)')
 parser.add_argument('--dnf', action='store_true', help='print disjunctiive normal form')
+parser.add_argument('--profile', action='store_true', help='run cProfile when training')
 
 args = parser.parse_args()
+
+if args.profile:
+	profiler = cProfile.Profile()
 
 # Create internal representation
 
@@ -119,7 +124,11 @@ def train_subset(percent):
 	print "Training... %0.2f%% (%d)" % (100.0 * percent, n,)
 	subset = training[np.random.choice(count, size=n, replace=False), :]
 	start = time.time()
+	if args.profile:
+		profiler.enable()
 	tree = train.train(subset, meta, n_uniques, classification_coln)
+	if args.profile:
+		profiler.disable()
 	print "Done. (%.2fs)" % (time.time() - start)
 	if args.prune is not None:
 		print "Pruning..."
@@ -189,3 +198,5 @@ if args.test is not None:
 
 	print "Done."
 
+if args.profile:
+	profiler.print_stats(sort='tottime')
