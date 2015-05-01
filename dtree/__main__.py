@@ -14,8 +14,8 @@ np.seterr(all='ignore')
 # Parse arguments
 
 parser = argparse.ArgumentParser(description='A decision tree utility.')
-parser.add_argument('trainfile')
-parser.add_argument('metafile')
+parser.add_argument('trainfile', help='training data')
+parser.add_argument('metafile', help='meta data (nominal or numeric)')
 parser.add_argument('--validate', metavar='validatefile', help='validation on held out data')
 parser.add_argument('--learning', metavar='validatefile', help='learning curve based on validations')
 parser.add_argument('--test', nargs=2, metavar=('testfile', 'outputfile'), help='generate classifications')
