@@ -31,12 +31,10 @@ def train(training, meta, n_uniques, classification_coln):
 
 			for example_idx in nonzero:
 				example = training[example_idx, :]
-				classification = example[classification_coln]
-				distribution = local_distribution if np.isnan(classification) else homogeneous_distributions[int(classification)]
 				split_idx = self.split(example)
-				if split_idx is None:
-					split_counts[:, :] += examples[example_idx] * distribution / float(self.branch())
-				else:
+				if split_idx is not None:
+					classification = example[classification_coln]
+					distribution = local_distribution if np.isnan(classification) else homogeneous_distributions[int(classification)]
 					split_counts[split_idx, :] += examples[example_idx] * distribution
 
 			split_totals = np.sum(split_counts, axis=1)
@@ -103,7 +101,7 @@ def train(training, meta, n_uniques, classification_coln):
 				return int(example[self.coln] < self.w)
 
 		def predicate(self, split_idx, decode, titles):
-			return "%s %s %s" % (titles[self.coln], '<' if split_idx == 0 else '>=', decode(self.coln, self.w),)
+			return "%s %s %s" % (titles[self.coln], '<' if split_idx == 1 else '>=', decode(self.coln, self.w),)
 
 	def good_numeric_splits(nonzero, coln):
 		values = training[nonzero, coln]
@@ -146,8 +144,8 @@ def train(training, meta, n_uniques, classification_coln):
 	def weighted_distribution(nonzero):
 		counts = np.zeros(n_classifications, dtype=np.float64)
 		for example_idx in nonzero:
-			classification = training[example_idx, classification_coln]
-			counts += popular_distribution if np.isnan(classification) else homogeneous_distributions[int(classification)]
+			if not np.isnan(classification):
+				counts += homogeneous_distributions[int(classification)]
 		return counts / np.sum(counts)
 
 	class Node(object):
