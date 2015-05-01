@@ -36,8 +36,6 @@ optional arguments:
 
 ## Usage
 
-Run from the directory containing this file.
-
 1. Read the training data file and generate a decision tree model.
   * `python dtree btrain.csv bmeta.csv`
 2. Output the generated decision tree in disjunctive normal form.
@@ -45,4 +43,4 @@ Run from the directory containing this file.
 3. Read the validation data file and report the accuracy of the model on that data.
   * `python dtree btrain.csv bmeta.csv --validate bvalidate.csv`
 4. Read a test data file with missing labels in the last column and output a copy of that file with predicted labels in the last column.
-  * `python dtree btrain.csv bmeta.csv --test btest.csv bout.csv`
+  * `python dtree btrain.csv bmeta.csv --test btest.csv ../PS2-Adrien-Tateno.csv`
