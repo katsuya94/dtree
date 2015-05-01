@@ -20,23 +20,19 @@ def train(training, meta, n_uniques, classification_coln):
 	for classification, homogeneous_distribution in enumerate(homogeneous_distributions):
 		homogeneous_distribution[classification] = 1.0
 
-	def classification_distribution(classification):
-		if classification is None:
-			return popular_distribution
-		else:
-			return homogeneous_distributions[classification]
-
 	class Split(object):
 		def __init__(self, coln):
 			self.coln = coln
+			self.cached_split_proportions = None
 			self.cached_entropy = None
 
-		def entropy(self, examples, nonzero):
+		def entropy(self, examples, nonzero, local_distribution):
 			split_counts = np.zeros((self.branch(), n_classifications,), dtype=np.float64)
 
 			for example_idx in nonzero:
 				example = training[example_idx, :]
-				distribution = classification_distribution(None if np.isnan(example[classification_coln]) else int(example[classification_coln]))
+				classification = example[classification_coln]
+				distribution = local_distribution if np.isnan(classification) else homogeneous_distributions[int(classification)]
 				split_idx = self.split(example)
 				if split_idx is None:
 					split_counts[:, :] += examples[example_idx] * distribution / float(self.branch())
@@ -45,14 +41,14 @@ def train(training, meta, n_uniques, classification_coln):
 
 			split_totals = np.sum(split_counts, axis=1)
 			total = np.sum(split_totals)
-			split_proportions = split_totals / total
+			self.cached_split_proportions = split_totals / total
 			split_probabilities = split_counts / split_totals[:, np.newaxis]
 
 			split_entropies = np.empty(self.branch(), dtype=np.float64)
 			for split_idx in range(self.branch()):
 				split_entropies[split_idx] = np.sum(e(probability) for probability in split_probabilities[split_idx, :])
 
-			weighted_entropies = split_entropies * split_proportions
+			weighted_entropies = split_entropies * self.cached_split_proportions
 
 			self.cached_entropy = np.sum(weighted_entropies)
 
@@ -64,7 +60,7 @@ def train(training, meta, n_uniques, classification_coln):
 			for example_idx in nonzero:
 				split_idx = self.split(training[example_idx, :])
 				if split_idx is None:
-					split_examples[:, example_idx] += examples[example_idx] / float(self.branch())
+					split_examples[:, example_idx] += examples[example_idx] * self.cached_split_proportions
 				else:
 					split_examples[split_idx, example_idx] += examples[example_idx]
 
@@ -118,7 +114,7 @@ def train(training, meta, n_uniques, classification_coln):
 		ws = [median, median - std, median + std]
 		return [NumericSplit(coln, w) for w in ws]
 
-	def best(examples, nonzero, restrictions):
+	def best(examples, nonzero, restrictions, local_distribution):
 		nominal_splits = [NominalSplit(coln) for coln, datatype in enumerate(meta) if datatype == 'nominal' and not restrictions[coln]]
 		numeric_splits = [split for coln, datatype in enumerate(meta) for split in good_numeric_splits(nonzero, coln) if datatype == 'numeric' and restrictions[coln] <= MAXIMUM_NUMERIC_DEPTH]
 
@@ -127,7 +123,7 @@ def train(training, meta, n_uniques, classification_coln):
 		best_split = None
 		best_entropy = np.inf
 		for split in splits:
-			entropy = split.entropy(examples, nonzero)
+			entropy = split.entropy(examples, nonzero, local_distribution)
 			if entropy < best_entropy:
 				best_split = split
 				best_entropy = entropy
@@ -151,7 +147,7 @@ def train(training, meta, n_uniques, classification_coln):
 		counts = np.zeros(n_classifications, dtype=np.float64)
 		for example_idx in nonzero:
 			classification = training[example_idx, classification_coln]
-			counts += classification_distribution(None if np.isnan(classification) else int(classification))
+			counts += popular_distribution if np.isnan(classification) else homogeneous_distributions[int(classification)]
 		return counts / np.sum(counts)
 
 	class Node(object):
@@ -160,14 +156,14 @@ def train(training, meta, n_uniques, classification_coln):
 			nonzero = np.nonzero(examples)[0]
 			self.num = len(nonzero)
 			if self.num == 0:
-				self.distribution = classification_distribution(None)
+				self.distribution = popular_distribution
 			else:
 				homogeneous_classification = homogeneous(nonzero)
 				if homogeneous_classification is not None:
 					self.distribution = homogeneous_distributions[homogeneous_classification]
 				else:
 					self.distribution = weighted_distribution(nonzero)
-					self.split = best(examples, nonzero, restrictions)
+					self.split = best(examples, nonzero, restrictions, self.distribution)
 					if self.split is not None and self.split.cached_entropy < prev_entropy:
 						new_restrictions = list(restrictions)
 						if type(self.split) == NominalSplit:
@@ -187,7 +183,7 @@ def train(training, meta, n_uniques, classification_coln):
 					split_distributions = np.empty((branch, n_classifications,), dtype=np.float64)
 					for split_idx, child in enumerate(self.children):
 						split_distributions[split_idx, :] = child.classify(example)
-					return np.sum(split_distributions, axis=0) / float(branch)
+					return np.sum(split_distributions * self.split.cached_split_proportions[:, np.newaxis], axis=0)
 				else:
 					return self.children[self.split.split(example)].classify(example)
 

@@ -110,8 +110,7 @@ def validate(filename, tree):
 			example = np.fromiter((encode(coln, data) for coln, data in enumerate(row)), dtype=np.float64)
 			if not np.isnan(example[classification_coln]):
 				actual = int(example[classification_coln])
-				distribution = tree.classify(example)
-				classification = np.argmax(distribution)
+				classification = np.argmax(tree.classify(example))
 				if actual == classification:
 					correct += 1
 				else:
@@ -142,7 +141,7 @@ if args.validate is not None:
 
 	tree = train_subset(args.percent / 100.0)
 
-	print "\nValidating..."
+	print "Validating..."
 	validity = validate(args.validate, tree)
 	print "Validation: %.2f%%" % (100.0 * validity)
 
