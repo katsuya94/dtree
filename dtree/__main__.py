@@ -7,6 +7,8 @@ import time
 import train
 import prune
 
+NUM_SAMPLES = 3
+
 np.seterr(all='ignore')
 
 # Parse arguments
@@ -14,11 +16,12 @@ np.seterr(all='ignore')
 parser = argparse.ArgumentParser(description='A decision tree utility.')
 parser.add_argument('trainfile')
 parser.add_argument('metafile')
-parser.add_argument('--validate', metavar='validatefile')
-parser.add_argument('--learning', metavar='validatefile')
-parser.add_argument('--test', metavar='testfile')
-parser.add_argument('--prune', metavar='prunefile')
-parser.add_argument('--percent', metavar='trainingpercent', type=float, default=100.0)
+parser.add_argument('--validate', metavar='validatefile', help='validation on held out data')
+parser.add_argument('--learning', metavar='validatefile', help='learning curve based on validations')
+parser.add_argument('--test', nargs=2, metavar=('testfile', 'outputfile'), help='generate classifications')
+parser.add_argument('--prune', metavar='prunefile', help='prune to improve performance on held out data')
+parser.add_argument('--percent', metavar='trainingpercent', type=float, default=100.0, help='percentage of data to train on (random sample)')
+parser.add_argument('--dnf', action='store_true', help='print disjunctiive normal form')
 
 args = parser.parse_args()
 
@@ -58,16 +61,24 @@ def invert(lst):
 	d = {val: idx for idx, val in enumerate(lst)}
 	return d
 
-encodes = [invert(list(unique)) if type(unique) == sets.Set else None for unique in uniques]
-decodes = [{v: k for k, v in encode.iteritems()} if type(encode) == dict else encode for encode in encodes]
+encodes = [invert(list(unique)) if unique is not None else None for unique in uniques]
+decodes = [{v: k for k, v in encode.iteritems()} if encode is not None else None for encode in encodes]
 
 def encode(coln, data):
 	if data == '?':
 		return np.nan
-	if meta[coln] == 'nominal':
+	elif meta[coln] == 'nominal':
 		return encodes[coln].get(data, np.nan)
-	if meta[coln] == 'numeric':
+	elif meta[coln] == 'numeric':
 		return float(data)
+
+def decode(coln, data):
+	if data == None:
+		return '?'
+	elif meta[coln] == 'nominal':
+		return decodes[coln].get(data, '?')
+	elif meta[coln] == 'numeric':
+		return '%0.2f' % data
 
 titles = None
 training = None
@@ -118,17 +129,63 @@ def train_subset(percent):
 	return tree
 
 if args.validate is not None:
+	print "\n[ --validate ]"
+
 	tree = train_subset(args.percent / 100.0)
-	print "Validating..."
+
+	print "\nValidating..."
 	validity = validate(args.validate, tree)
 	print "Validation: %.2f%%" % (100.0 * validity)
 
 if args.learning is not None:
-	print "Learning Curve..."
+	print "\n[ --learning ]"
 	points = []
 	for percent in range(0, 110, 10):
-		tree = train_subset(float(percent) / 100.0)
-		validity = validate(args.learning, tree)
-		points.append((percent, validity,))
+		validity = 0.0
+		for _ in range(NUM_SAMPLES):
+			tree = train_subset((args.percent / 100.0) * (float(percent) / 100.0))
+			validity += validate(args.learning, tree) / float(NUM_SAMPLES)
+			points.append((percent, validity,))
 	for point in points:
 		print point
+
+if args.dnf:
+	print "\n[ --dnf ]"
+
+	tree = train_subset(args.percent / 100.0)
+
+	classification_predicate_lists = [[] for _ in range(n_uniques[classification_coln])]
+
+	def traverse(node, predicates):
+		if node.children is None:
+			classification_predicate_lists[np.argmax(node.distribution)].append(predicates)
+		else:
+			for split_idx, child in enumerate(node.children):
+				traverse(child, predicates + [node.split.predicate(split_idx, decode, titles)])
+
+	traverse(tree, [])
+
+	for classification, predicate_lists in enumerate(classification_predicate_lists):
+		print "\nIF %s THEN %s = %s" % (" OR ".join("(" + " AND ".join(predicate for predicate in predicate_list) + ")" for predicate_list in predicate_lists), titles[classification_coln], decode(classification_coln, classification))
+
+if args.test is not None:
+	print "\n[ --test ]"
+
+	tree = train_subset(args.percent / 100.0)
+
+	print "Testing..."
+
+	with open(args.test[0], 'rb') as testfile:
+		reader = csv.reader(testfile, dialect='dtree')
+		with open(args.test[1], 'wb') as outputfile:
+			writer = csv.writer(outputfile, dialect='dtree')
+			writer.writerow(next(reader))
+			for row in reader:
+				example = np.fromiter((encode(coln, data) for coln, data in enumerate(row)), dtype=np.float64)
+				classification = np.argmax(tree.classify(example))
+				classified = list(row)
+				classified[classification_coln] = decode(classification_coln, classification)
+				writer.writerow(classified)
+
+	print "Done."
+

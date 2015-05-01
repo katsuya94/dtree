@@ -35,7 +35,7 @@ def prune(tree, validate):
 			else:
 				return test_prune(node.children[indices[0]], indices[1:])
 
-		for indices in reversed(frontier):
+		for indices in frontier:
 			success = test_prune(tree, indices)
 			if success is not None:
 				best = success

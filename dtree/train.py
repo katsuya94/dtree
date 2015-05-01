@@ -69,6 +69,9 @@ def train(training, meta, n_uniques, classification_coln):
 		def split(self, example):
 			raise NotImplementedError()
 
+		def predicate(self, split_idx, decode, titles):
+			raise NotImplementedError()
+
 	class NominalSplit(Split):
 		def __init__(self, coln):
 			super(NominalSplit, self).__init__()
@@ -83,6 +86,8 @@ def train(training, meta, n_uniques, classification_coln):
 			else:
 				return int(example[self.coln])
 
+		def predicate(self, split_idx, decode, titles):
+			return "%s = %s" % (titles[self.coln], decode(self.coln, split_idx),)
 
 	class NumericSplit(Split):
 		def __init__(self, coln, w):
@@ -100,6 +105,9 @@ def train(training, meta, n_uniques, classification_coln):
 				return 0
 			else:
 				return 1
+
+		def predicate(self, split_idx, decode, titles):
+			return "%s %s %s" % (titles[self.coln], '<' if split_idx == 0 else '>=', decode(self.coln, self.w),)
 
 	def good_numeric_splits(nonzero, coln):
 		values = training[nonzero, coln]
